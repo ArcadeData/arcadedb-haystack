@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "arcadedb-haystack"
+version = "0.1.0"
+description = "ArcadeDB integration for Haystack — document storage + HNSW vector search + SQL filtering"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [{ name = "ArcadeData Ltd", email = "info@arcadedb.com" }]
+keywords = ["arcadedb", "haystack", "vector-search", "document-store", "rag"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "haystack-ai>=2.9.0",
+    "requests",
+]
+
+[project.urls]
+Homepage = "https://arcadedb.com"
+Repository = "https://github.com/ArcadeData/arcadedb-haystack"
+Documentation = "https://docs.arcadedb.com"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/haystack_integrations"]
+
+[tool.hatch.envs.default]
+dependencies = [
+    "pytest",
+    "pytest-cov",
+]
+
+[tool.hatch.envs.default.scripts]
+test = "pytest tests/ {args}"
+test-cov = "pytest tests/ --cov=haystack_integrations --cov-report=term-missing {args}"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
