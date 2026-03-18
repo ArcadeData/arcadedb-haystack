@@ -7,6 +7,7 @@ import pytest
 from haystack import Document
 from haystack.document_stores.errors import DuplicateDocumentError
 from haystack.document_stores.types import DuplicatePolicy
+from haystack.utils import Secret
 
 from haystack_integrations.document_stores.arcadedb import ArcadeDBDocumentStore
 
@@ -15,10 +16,8 @@ def _store(arcadedb_url, **kwargs):
     return ArcadeDBDocumentStore(
         url=arcadedb_url,
         database="haystack_test",
-        username=kwargs.pop("username", None)
-        or ArcadeDBDocumentStore.__init__.__kwdefaults__["username"],
-        password=kwargs.pop("password", None)
-        or ArcadeDBDocumentStore.__init__.__kwdefaults__["password"],
+        username=Secret.from_token("root"),
+        password=Secret.from_token("arcadedb"),
         recreate_type=True,
         **kwargs,
     )
@@ -157,9 +156,7 @@ def test_embedding_retrieval(arcadedb_url):
     docs = _sample_docs(5, dim=4)
     store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
 
-    results = store._embedding_retrieval(
-        query_embedding=[4.0, 4.0, 4.0, 4.0], top_k=3
-    )
+    results = store._embedding_retrieval(query_embedding=[4.0, 4.0, 4.0, 4.0], top_k=3)
     assert len(results) <= 3
     assert results[0].score is not None
 
@@ -167,8 +164,17 @@ def test_embedding_retrieval(arcadedb_url):
 # ---- serialization ----
 
 
-def test_to_dict_from_dict(arcadedb_url):
-    store = _store(arcadedb_url, embedding_dimension=4)
+def test_to_dict_from_dict(arcadedb_url, monkeypatch):
+    monkeypatch.setenv("ARCADEDB_USERNAME", "root")
+    monkeypatch.setenv("ARCADEDB_PASSWORD", "arcadedb")
+    store = ArcadeDBDocumentStore(
+        url=arcadedb_url,
+        database="haystack_test",
+        username=Secret.from_env_var("ARCADEDB_USERNAME"),
+        password=Secret.from_env_var("ARCADEDB_PASSWORD"),
+        embedding_dimension=4,
+        recreate_type=True,
+    )
     data = store.to_dict()
     restored = ArcadeDBDocumentStore.from_dict(data)
     assert restored._database == store._database
