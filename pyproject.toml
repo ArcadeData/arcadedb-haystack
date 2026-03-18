@@ -33,6 +33,15 @@ Homepage = "https://arcadedb.com"
 Repository = "https://github.com/ArcadeData/arcadedb-haystack"
 Documentation = "https://docs.arcadedb.com"
 
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "testcontainers>=4.9.1",
+    "docker>=7.1.0",
+    "ruff",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/haystack_integrations"]
 
@@ -40,6 +49,9 @@ packages = ["src/haystack_integrations"]
 dependencies = [
     "pytest",
     "pytest-cov",
+    "testcontainers>=4.9.1",
+    "docker>=7.1.0",
+    "ruff",
 ]
 
 [tool.hatch.envs.default.scripts]

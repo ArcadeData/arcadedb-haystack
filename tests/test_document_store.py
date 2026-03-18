@@ -1,174 +1,181 @@
 # SPDX-FileCopyrightText: 2026-present ArcadeData Ltd <info@arcadedb.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-Integration tests for ArcadeDBDocumentStore.
+"""Integration tests for ArcadeDBDocumentStore (using testcontainers)."""
 
-Prerequisites:
-    docker run -d -p 2480:2480 \
-        -e JAVA_OPTS="-Darcadedb.server.rootPassword=arcadedb" \
-        arcadedata/arcadedb:latest
-"""
-
-import os
-import unittest
-
+import pytest
 from haystack import Document
+from haystack.document_stores.errors import DuplicateDocumentError
 from haystack.document_stores.types import DuplicatePolicy
+from haystack.utils import Secret
 
 from haystack_integrations.document_stores.arcadedb import ArcadeDBDocumentStore
 
 
-def _store(**kwargs) -> ArcadeDBDocumentStore:
+def _store(arcadedb_url, **kwargs):
     return ArcadeDBDocumentStore(
-        url=os.getenv("ARCADEDB_URL", "http://localhost:2480"),
+        url=arcadedb_url,
         database="haystack_test",
-        username=kwargs.pop("username", None)
-        or ArcadeDBDocumentStore.__init__.__kwdefaults__["username"],
-        password=kwargs.pop("password", None)
-        or ArcadeDBDocumentStore.__init__.__kwdefaults__["password"],
+        username=Secret.from_token("root"),
+        password=Secret.from_token("arcadedb"),
         recreate_type=True,
         **kwargs,
     )
 
 
-def _sample_docs(n: int = 3, dim: int = 4) -> list[Document]:
-    docs = []
-    for i in range(n):
-        docs.append(
-            Document(
-                content=f"Document number {i}",
-                embedding=[float(i)] * dim,
-                meta={"category": "test", "priority": i},
-            )
+def _sample_docs(n=3, dim=4):
+    return [
+        Document(
+            content=f"Document number {i}",
+            embedding=[float(i)] * dim,
+            meta={"category": "test", "priority": i},
         )
-    return docs
+        for i in range(n)
+    ]
 
 
-class TestArcadeDBDocumentStore(unittest.TestCase):
-    """Integration tests — require a running ArcadeDB instance."""
-
-    def setUp(self):
-        self.store = _store(embedding_dimension=4)
-
-    # ---- count ----
-
-    def test_count_empty(self):
-        self.assertEqual(self.store.count_documents(), 0)
-
-    def test_count_after_write(self):
-        docs = _sample_docs(5)
-        self.store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
-        self.assertEqual(self.store.count_documents(), 5)
-
-    # ---- write ----
-
-    def test_write_and_read(self):
-        docs = _sample_docs(2)
-        written = self.store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
-        self.assertEqual(written, 2)
-
-        all_docs = self.store.filter_documents()
-        self.assertEqual(len(all_docs), 2)
-
-    def test_write_overwrite(self):
-        docs = _sample_docs(1)
-        self.store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
-
-        # Modify content and overwrite
-        docs[0].content = "Updated content"
-        self.store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
-
-        all_docs = self.store.filter_documents()
-        self.assertEqual(len(all_docs), 1)
-        self.assertEqual(all_docs[0].content, "Updated content")
-
-    def test_write_skip(self):
-        docs = _sample_docs(1)
-        self.store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
-
-        # Attempt to write same doc with SKIP policy
-        written = self.store.write_documents(docs, policy=DuplicatePolicy.SKIP)
-        self.assertEqual(written, 0)
-        self.assertEqual(self.store.count_documents(), 1)
-
-    def test_write_duplicate_raises(self):
-        docs = _sample_docs(1)
-        self.store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
-
-        from haystack.document_stores.errors import DuplicateDocumentError
-
-        with self.assertRaises(DuplicateDocumentError):
-            self.store.write_documents(docs, policy=DuplicatePolicy.NONE)
-
-    # ---- delete ----
-
-    def test_delete(self):
-        docs = _sample_docs(3)
-        self.store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
-
-        ids_to_delete = [docs[0].id, docs[1].id]
-        self.store.delete_documents(ids_to_delete)
-
-        self.assertEqual(self.store.count_documents(), 1)
-
-    # ---- filter ----
-
-    def test_filter_equality(self):
-        docs = _sample_docs(3)
-        self.store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
-
-        result = self.store.filter_documents(
-            filters={"field": "meta.category", "operator": "==", "value": "test"}
-        )
-        self.assertEqual(len(result), 3)
-
-    def test_filter_comparison(self):
-        docs = _sample_docs(5)
-        self.store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
-
-        result = self.store.filter_documents(
-            filters={"field": "meta.priority", "operator": ">", "value": 2}
-        )
-        self.assertEqual(len(result), 2)  # priority 3 and 4
-
-    def test_filter_and(self):
-        docs = _sample_docs(5)
-        self.store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
-
-        result = self.store.filter_documents(
-            filters={
-                "operator": "AND",
-                "conditions": [
-                    {"field": "meta.category", "operator": "==", "value": "test"},
-                    {"field": "meta.priority", "operator": ">=", "value": 3},
-                ],
-            }
-        )
-        self.assertEqual(len(result), 2)
-
-    # ---- embedding retrieval ----
-
-    def test_embedding_retrieval(self):
-        docs = _sample_docs(5, dim=4)
-        self.store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
-
-        results = self.store._embedding_retrieval(
-            query_embedding=[4.0, 4.0, 4.0, 4.0], top_k=3
-        )
-        self.assertLessEqual(len(results), 3)
-        # The closest document should be the one with embedding [4.0, 4.0, 4.0, 4.0]
-        self.assertIsNotNone(results[0].score)
-
-    # ---- serialization ----
-
-    def test_to_dict_from_dict(self):
-        store = _store(embedding_dimension=4)
-        data = store.to_dict()
-        restored = ArcadeDBDocumentStore.from_dict(data)
-        self.assertEqual(restored._database, store._database)
-        self.assertEqual(restored._embedding_dimension, store._embedding_dimension)
+# ---- count ----
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_count_empty(arcadedb_url):
+    store = _store(arcadedb_url, embedding_dimension=4)
+    assert store.count_documents() == 0
+
+
+def test_count_after_write(arcadedb_url):
+    store = _store(arcadedb_url, embedding_dimension=4)
+    docs = _sample_docs(5)
+    store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
+    assert store.count_documents() == 5
+
+
+# ---- write ----
+
+
+def test_write_and_read(arcadedb_url):
+    store = _store(arcadedb_url, embedding_dimension=4)
+    docs = _sample_docs(2)
+    written = store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
+    assert written == 2
+
+    all_docs = store.filter_documents()
+    assert len(all_docs) == 2
+
+
+def test_write_overwrite(arcadedb_url):
+    store = _store(arcadedb_url, embedding_dimension=4)
+    docs = _sample_docs(1)
+    store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
+
+    docs[0].content = "Updated content"
+    store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
+
+    all_docs = store.filter_documents()
+    assert len(all_docs) == 1
+    assert all_docs[0].content == "Updated content"
+
+
+def test_write_skip(arcadedb_url):
+    store = _store(arcadedb_url, embedding_dimension=4)
+    docs = _sample_docs(1)
+    store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
+
+    written = store.write_documents(docs, policy=DuplicatePolicy.SKIP)
+    assert written == 0
+    assert store.count_documents() == 1
+
+
+def test_write_duplicate_raises(arcadedb_url):
+    store = _store(arcadedb_url, embedding_dimension=4)
+    docs = _sample_docs(1)
+    store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
+
+    with pytest.raises(DuplicateDocumentError):
+        store.write_documents(docs, policy=DuplicatePolicy.NONE)
+
+
+# ---- delete ----
+
+
+def test_delete(arcadedb_url):
+    store = _store(arcadedb_url, embedding_dimension=4)
+    docs = _sample_docs(3)
+    store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
+
+    store.delete_documents([docs[0].id, docs[1].id])
+    assert store.count_documents() == 1
+
+
+# ---- filter ----
+
+
+def test_filter_equality(arcadedb_url):
+    store = _store(arcadedb_url, embedding_dimension=4)
+    docs = _sample_docs(3)
+    store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
+
+    result = store.filter_documents(
+        filters={"field": "meta.category", "operator": "==", "value": "test"}
+    )
+    assert len(result) == 3
+
+
+def test_filter_comparison(arcadedb_url):
+    store = _store(arcadedb_url, embedding_dimension=4)
+    docs = _sample_docs(5)
+    store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
+
+    result = store.filter_documents(
+        filters={"field": "meta.priority", "operator": ">", "value": 2}
+    )
+    assert len(result) == 2
+
+
+def test_filter_and(arcadedb_url):
+    store = _store(arcadedb_url, embedding_dimension=4)
+    docs = _sample_docs(5)
+    store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
+
+    result = store.filter_documents(
+        filters={
+            "operator": "AND",
+            "conditions": [
+                {"field": "meta.category", "operator": "==", "value": "test"},
+                {"field": "meta.priority", "operator": ">=", "value": 3},
+            ],
+        }
+    )
+    assert len(result) == 2
+
+
+# ---- embedding retrieval ----
+
+
+def test_embedding_retrieval(arcadedb_url):
+    store = _store(arcadedb_url, embedding_dimension=4)
+    docs = _sample_docs(5, dim=4)
+    store.write_documents(docs, policy=DuplicatePolicy.OVERWRITE)
+
+    results = store._embedding_retrieval(query_embedding=[4.0, 4.0, 4.0, 4.0], top_k=3)
+    assert len(results) <= 3
+    assert results[0].score is not None
+
+
+# ---- serialization ----
+
+
+def test_to_dict_from_dict(arcadedb_url, monkeypatch):
+    monkeypatch.setenv("ARCADEDB_USERNAME", "root")
+    monkeypatch.setenv("ARCADEDB_PASSWORD", "arcadedb")
+    store = ArcadeDBDocumentStore(
+        url=arcadedb_url,
+        database="haystack_test",
+        username=Secret.from_env_var("ARCADEDB_USERNAME"),
+        password=Secret.from_env_var("ARCADEDB_PASSWORD"),
+        embedding_dimension=4,
+        recreate_type=True,
+    )
+    data = store.to_dict()
+    restored = ArcadeDBDocumentStore.from_dict(data)
+    assert restored._database == store._database
+    assert restored._embedding_dimension == store._embedding_dimension

@@ -1,7 +1,10 @@
 # SPDX-FileCopyrightText: 2026-present ArcadeData Ltd <info@arcadedb.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""ArcadeDB DocumentStore for Haystack 2.x — document storage + HNSW vector search via HTTP/JSON API."""
+"""ArcadeDB DocumentStore for Haystack 2.x.
+
+Document storage + HNSW vector search via HTTP/JSON API.
+"""
 
 import logging
 from typing import Any, ClassVar
@@ -101,7 +104,9 @@ class ArcadeDBDocumentStore:
             return (user, pwd)
         return None
 
-    def _command(self, sql: str, *, positional_params: list[Any] | None = None) -> list[dict[str, Any]]:
+    def _command(
+        self, sql: str, *, positional_params: list[Any] | None = None
+    ) -> list[dict[str, Any]]:
         """Execute an SQL command via the ArcadeDB HTTP API and return result rows."""
         url = f"{self._url}/api/v1/command/{self._database}"
         payload: dict[str, Any] = {"language": "sql", "command": sql}
@@ -136,7 +141,9 @@ class ArcadeDBDocumentStore:
                 logger.info("Created database '%s'", self._database)
             except RuntimeError:
                 # Database likely already exists
-                logger.debug("Database '%s' already exists or cannot be created", self._database)
+                logger.debug(
+                    "Database '%s' already exists or cannot be created", self._database
+                )
 
         # 2. Optionally drop existing type
         if self._recreate_type:
@@ -147,24 +154,19 @@ class ArcadeDBDocumentStore:
 
         # 3. Create vertex type + properties
         self._command(f"CREATE VERTEX TYPE `{self._type_name}` IF NOT EXISTS")
-        self._command(
-            f"CREATE PROPERTY `{self._type_name}`.id IF NOT EXISTS STRING"
-        )
+        self._command(f"CREATE PROPERTY `{self._type_name}`.id IF NOT EXISTS STRING")
         self._command(
             f"CREATE PROPERTY `{self._type_name}`.content IF NOT EXISTS STRING"
         )
         self._command(
-            f"CREATE PROPERTY `{self._type_name}`.embedding IF NOT EXISTS ARRAY_OF_FLOATS"
+            f"CREATE PROPERTY `{self._type_name}`"
+            ".embedding IF NOT EXISTS ARRAY_OF_FLOATS"
         )
-        self._command(
-            f"CREATE PROPERTY `{self._type_name}`.meta IF NOT EXISTS MAP"
-        )
+        self._command(f"CREATE PROPERTY `{self._type_name}`.meta IF NOT EXISTS MAP")
 
         # 4. Unique index on id
         try:
-            self._command(
-                f"CREATE INDEX ON `{self._type_name}` (id) UNIQUE"
-            )
+            self._command(f"CREATE INDEX ON `{self._type_name}` (id) UNIQUE")
         except RuntimeError:
             logger.debug("Unique index on id already exists")
 
@@ -172,16 +174,23 @@ class ArcadeDBDocumentStore:
         metric = self._SIMILARITY_MAP.get(self._similarity_function, "COSINE")
         try:
             self._command(
-                f"CREATE INDEX IF NOT EXISTS ON `{self._type_name}` (embedding) LSM_VECTOR "
-                f"METADATA {{ dimensions: {self._embedding_dimension}, similarity: '{metric}' }}"
+                f"CREATE INDEX IF NOT EXISTS ON "
+                f"`{self._type_name}` (embedding) LSM_VECTOR "
+                f"METADATA {{ dimensions: "
+                f"{self._embedding_dimension}, "
+                f"similarity: '{metric}' }}"
             )
         except RuntimeError:
             logger.debug("Vector index on embedding already exists")
 
         self._initialized = True
         logger.info(
-            "ArcadeDBDocumentStore initialized: database=%s, type=%s, dim=%d, metric=%s",
-            self._database, self._type_name, self._embedding_dimension, metric,
+            "ArcadeDBDocumentStore initialized:"
+            " database=%s, type=%s, dim=%d, metric=%s",
+            self._database,
+            self._type_name,
+            self._embedding_dimension,
+            metric,
         )
 
     # ------------------------------------------------------------------
@@ -247,7 +256,8 @@ class ArcadeDBDocumentStore:
 
             elif policy == DuplicatePolicy.SKIP:
                 existing = self._command(
-                    f"SELECT id FROM `{self._type_name}` WHERE id = {_sql_str(record['id'])}"
+                    f"SELECT id FROM `{self._type_name}`"
+                    f" WHERE id = {_sql_str(record['id'])}"
                 )
                 if existing:
                     continue
@@ -257,7 +267,8 @@ class ArcadeDBDocumentStore:
             else:
                 # DuplicatePolicy.NONE — raise on duplicate
                 existing = self._command(
-                    f"SELECT id FROM `{self._type_name}` WHERE id = {_sql_str(record['id'])}"
+                    f"SELECT id FROM `{self._type_name}`"
+                    f" WHERE id = {_sql_str(record['id'])}"
                 )
                 if existing:
                     msg = f"Document with id '{record['id']}' already exists."
@@ -267,7 +278,9 @@ class ArcadeDBDocumentStore:
 
         return written
 
-    def _insert_record(self, record: dict[str, Any], embedding_str: str, meta_str: str) -> None:
+    def _insert_record(
+        self, record: dict[str, Any], embedding_str: str, meta_str: str
+    ) -> None:
         sql = (
             f"INSERT INTO `{self._type_name}` SET "
             f"id = {_sql_str(record['id'])}, "
@@ -304,7 +317,8 @@ class ArcadeDBDocumentStore:
         self._ensure_initialized()
         embedding_str = str(query_embedding)
 
-        # vectorNeighbors returns a single row with a "neighbors" list of {record, distance}
+        # vectorNeighbors returns a single row with
+        # a "neighbors" list of {record, distance}
         sql = (
             f"SELECT vectorNeighbors('{self._type_name}[embedding]', "
             f"{embedding_str}, {top_k}) AS neighbors"

@@ -19,8 +19,12 @@ class ArcadeDBEmbeddingRetriever:
     Usage in a Haystack pipeline:
 
     ```python
-    from haystack_integrations.components.retrievers.arcadedb import ArcadeDBEmbeddingRetriever
-    from haystack_integrations.document_stores.arcadedb import ArcadeDBDocumentStore
+    from haystack_integrations.components.retrievers.arcadedb import (
+        ArcadeDBEmbeddingRetriever,
+    )
+    from haystack_integrations.document_stores.arcadedb import (
+        ArcadeDBDocumentStore,
+    )
 
     store = ArcadeDBDocumentStore(database="mydb")
     retriever = ArcadeDBEmbeddingRetriever(document_store=store, top_k=5)
@@ -51,7 +55,8 @@ class ArcadeDBEmbeddingRetriever:
         Retrieve documents by vector similarity.
 
         :param query_embedding: The embedding vector to search with.
-        :param filters: Optional filters to narrow results (overrides or merges with init filters).
+        :param filters: Optional filters to narrow results
+            (overrides or merges with init filters).
         :param top_k: Maximum number of documents to return.
         :returns: A dict with key ``"documents"`` containing the retrieved documents.
         """
@@ -60,7 +65,11 @@ class ArcadeDBEmbeddingRetriever:
         # Resolve filter policy
         if self._filter_policy == FilterPolicy.REPLACE and filters is not None:
             effective_filters = filters
-        elif self._filter_policy == FilterPolicy.MERGE and filters is not None and self._filters is not None:
+        elif (
+            self._filter_policy == FilterPolicy.MERGE
+            and filters is not None
+            and self._filters is not None
+        ):
             effective_filters = {
                 "operator": "AND",
                 "conditions": [self._filters, filters],
