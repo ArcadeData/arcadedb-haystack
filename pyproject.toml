@@ -24,7 +24,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "haystack-ai>=3.0.0",
+    "haystack-ai>=3.1.0",
     "requests",
 ]
 
